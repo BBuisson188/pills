@@ -2,6 +2,9 @@ const STORAGE_KEY = "recovery-med-tracker-v1";
 const NOTIFICATION_STORAGE_KEY = "recovery-med-tracker-notifications";
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
+const SYNC_URL =
+  "https://script.google.com/macros/s/AKfycby2Ir6h_qqJrY6b8opTBTb3KzcGnbR17ebYqifHgOP2i2-bnBrVWoAkbQ1qgEHU-7gfSw/exec";
+const SYNC_KEY = "shared-recovery-log";
 const defaultMedications = createDefaultMedications();
 
 const state = loadState();
@@ -29,6 +32,8 @@ const elements = {
   importInput: document.getElementById("importInput"),
   enableNotificationsButton: document.getElementById("enableNotificationsButton"),
   notificationStatus: document.getElementById("notificationStatus"),
+  refreshHistoryButton: document.getElementById("refreshHistoryButton"),
+  syncStatus: document.getElementById("syncStatus"),
   warningDialog: document.getElementById("warningDialog"),
   warningMessage: document.getElementById("warningMessage"),
   customMedicationForm: document.getElementById("customMedicationForm"),
@@ -40,6 +45,7 @@ const elements = {
 };
 
 let countdownTimer = null;
+let syncInFlight = false;
 
 initialize();
 
@@ -50,6 +56,7 @@ function initialize() {
   }
   renderAll();
   startCountdownTicker();
+  syncFromRemoteOnLoad();
 }
 
 function createDefaultMedications() {
@@ -137,6 +144,10 @@ function createInitialState() {
       notificationsEnabled: readNotificationPreference(),
       lastNotificationMap: {},
     },
+    sync: {
+      lastPulledAt: null,
+      lastPushedAt: null,
+    },
   };
 }
 
@@ -173,6 +184,10 @@ function loadState() {
         notificationsEnabled:
           parsed.ui?.notificationsEnabled ?? readNotificationPreference(),
         lastNotificationMap: parsed.ui?.lastNotificationMap ?? {},
+      },
+      sync: {
+        lastPulledAt: parsed.sync?.lastPulledAt ?? null,
+        lastPushedAt: parsed.sync?.lastPushedAt ?? null,
       },
     };
     applyMedicationRegimenDefaults(loadedState.medications);
@@ -219,6 +234,7 @@ function bindEvents() {
     "submit",
     handleCustomMedicationSubmit
   );
+  elements.refreshHistoryButton.addEventListener("click", handleRefreshHistory);
   elements.medicationId.addEventListener("change", () => {
     elements.doseAmount.value = "";
     syncDoseFieldToMedication();
@@ -243,6 +259,7 @@ function renderAll() {
   renderSettings();
   renderNextMedicationCard();
   renderNotificationState();
+  renderSyncStatus();
   maybeSendNotifications();
   saveState();
 }
@@ -445,6 +462,7 @@ function renderHistory() {
       }
       state.entries = state.entries.filter((item) => item.id !== entry.id);
       renderAll();
+      syncStateToRemote("Deleted medication entry");
     });
 
     elements.historyList.append(fragment);
@@ -483,6 +501,7 @@ function renderSettings() {
         medication.dailyMax = maxInput.value ? sanitizeNumber(maxInput.value, null) : null;
         medication.notes = notesInput.value.trim();
         renderAll();
+        syncStateToRemote("Updated medication rule");
       });
 
       fragment.querySelector(".settings-remove").addEventListener("click", () => {
@@ -498,6 +517,7 @@ function renderSettings() {
           resetDoseForm();
         }
         renderAll();
+        syncStateToRemote("Deleted medication rule");
       });
 
       elements.settingsMedicationList.append(fragment);
@@ -520,6 +540,118 @@ function renderNotificationState() {
     : permission === "denied"
       ? "Notifications are blocked in this browser."
       : "Notifications are off. You can still rely on the on-screen countdowns.";
+}
+
+function renderSyncStatus() {
+  if (!elements.syncStatus) {
+    return;
+  }
+
+  if (syncInFlight) {
+    elements.syncStatus.textContent = "Syncing shared history...";
+    return;
+  }
+
+  if (state.sync?.lastPulledAt) {
+    elements.syncStatus.textContent = `Shared history last refreshed ${formatTimestamp(
+      state.sync.lastPulledAt
+    )}.`;
+    return;
+  }
+
+  if (state.sync?.lastPushedAt) {
+    elements.syncStatus.textContent = `Shared history last saved ${formatTimestamp(
+      state.sync.lastPushedAt
+    )}.`;
+    return;
+  }
+
+  elements.syncStatus.textContent =
+    "Shared sync is on. The app will load shared history on open and save after changes.";
+}
+
+async function handleRefreshHistory() {
+  await pullRemoteState(true);
+}
+
+async function syncFromRemoteOnLoad() {
+  await pullRemoteState(false);
+}
+
+async function pullRemoteState(showAlertOnError) {
+  try {
+    syncInFlight = true;
+    renderSyncStatus();
+    const response = await fetch(`${SYNC_URL}?key=${encodeURIComponent(SYNC_KEY)}`);
+    if (!response.ok) {
+      throw new Error(`Sync request failed with ${response.status}`);
+    }
+
+    const data = await response.json();
+    const remotePayload = data?.payload;
+
+    if (remotePayload?.medications && remotePayload?.entries) {
+      state.medications = remotePayload.medications;
+      state.entries = remotePayload.entries;
+      applyMedicationRegimenDefaults(state.medications);
+      state.sync.lastPulledAt = data.updatedAt || new Date().toISOString();
+      renderAll();
+      return;
+    }
+
+    state.sync.lastPulledAt = new Date().toISOString();
+    renderAll();
+    await syncStateToRemote("Seeded initial shared history", false);
+  } catch (error) {
+    console.error("Failed to pull shared history:", error);
+    if (showAlertOnError) {
+      window.alert(
+        "Refresh failed. The app is still using local data on this device right now."
+      );
+    }
+  } finally {
+    syncInFlight = false;
+    renderSyncStatus();
+  }
+}
+
+async function syncStateToRemote(reason = "Updated tracker data", showAlertOnError = false) {
+  try {
+    syncInFlight = true;
+    renderSyncStatus();
+    const response = await fetch(SYNC_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify({
+        key: SYNC_KEY,
+        payload: {
+          medications: state.medications,
+          entries: state.entries,
+        },
+        reason,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Save request failed with ${response.status}`);
+    }
+
+    const data = await response.json();
+    state.sync.lastPushedAt = data.updatedAt || new Date().toISOString();
+    saveState();
+  } catch (error) {
+    console.error("Failed to save shared history:", error);
+    if (showAlertOnError) {
+      window.alert(
+        "Shared save failed. Your changes are still stored locally on this device."
+      );
+    }
+  } finally {
+    syncInFlight = false;
+    renderSyncStatus();
+  }
 }
 
 function handleDoseSubmit(event) {
@@ -564,6 +696,7 @@ function saveEntry(entry) {
   state.ui.lastNotificationMap[entry.medicationId] = null;
   resetDoseForm();
   renderAll();
+  syncStateToRemote("Saved medication update");
 }
 
 function handleCustomMedicationSubmit(event) {
@@ -583,6 +716,7 @@ function handleCustomMedicationSubmit(event) {
   elements.customMedicationForm.reset();
   renderAll();
   setActiveTab("settings");
+  syncStateToRemote("Added medication rule");
 }
 
 function exportData() {
@@ -622,6 +756,7 @@ function importData(event) {
       renderAll();
       resetDoseForm();
       setActiveTab("history");
+      syncStateToRemote("Imported tracker data");
     } catch (error) {
       window.alert(`Import failed: ${error.message}`);
     } finally {
