@@ -375,7 +375,9 @@ function renderNextMedicationCard() {
 }
 
 function getNextMedicationSummary() {
-  const activeSummaries = getMedicationSummaries().filter((summary) => summary.hasHistory);
+  const activeSummaries = getMedicationSummaries().filter(
+    (summary) => summary.hasHistory && isPrimaryPainMedication(summary.medication)
+  );
   if (!activeSummaries.length) {
     return null;
   }
@@ -386,6 +388,13 @@ function getNextMedicationSummary() {
         a.nextAllowedAt - b.nextAllowedAt ||
         a.medication.name.localeCompare(b.medication.name)
     )[0];
+}
+
+function isPrimaryPainMedication(medication) {
+  return (
+    medication.name.toLowerCase().includes("tylenol") ||
+    medication.name.toLowerCase().includes("motrin")
+  );
 }
 
 function renderAlternationHelper() {
