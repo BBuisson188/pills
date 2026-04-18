@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Recovery Med Tracker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <p class="eyebrow">Recovery Med Tracker</p>
+        <h1>Keep doses simple when you are tired.</h1>
+        <p class="hero-copy">
+          Tracking aid only. Follow your surgeon's instructions, prescription
+          directions, and package labeling.
+        </p>
+      </header>
+
+      <nav class="tabs" aria-label="Main sections">
+        <button class="tab-button active" data-tab="tracker">Tracker</button>
+        <button class="tab-button" data-tab="history">History</button>
+        <button class="tab-button" data-tab="settings">Settings</button>
+      </nav>
+
+      <main>
+        <section class="tab-panel active" data-panel="tracker">
+          <section class="next-card" id="nextMedicationCard">
+            <p class="card-label">Next medication</p>
+            <h2 id="nextMedicationName">No doses logged yet</h2>
+            <p class="next-time" id="nextMedicationTime">
+              Log a dose to start tracking.
+            </p>
+            <p class="countdown" id="nextMedicationCountdown"></p>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <h2>Quick add</h2>
+              <p>Tap once to log the default dose right now.</p>
+            </div>
+            <div class="quick-grid" id="quickAddGrid"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <h2>Medication status</h2>
+              <p>Each medication shows its last dose and next allowed time.</p>
+            </div>
+            <div class="status-list" id="medicationStatusList"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <h2>Alternation helper</h2>
+              <p>Useful if you are alternating Tylenol and Motrin about every 3 hours.</p>
+            </div>
+            <div id="alternationHelper" class="alternation-helper"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <h2>Manual entry</h2>
+              <p>Use this for edits, custom times, or custom medications.</p>
+            </div>
+
+            <form id="doseForm" class="entry-form">
+              <input type="hidden" id="entryId" />
+              <label>
+                Medication
+                <select id="medicationId" required></select>
+              </label>
+
+              <label>
+                Dose
+                <input
+                  id="doseAmount"
+                  name="doseAmount"
+                  type="text"
+                  placeholder="e.g. 1000 mg"
+                  required
+                />
+              </label>
+
+              <label>
+                Time taken
+                <input id="takenAt" name="takenAt" type="datetime-local" required />
+              </label>
+
+              <label>
+                Notes
+                <textarea
+                  id="entryNotes"
+                  name="entryNotes"
+                  rows="3"
+                  placeholder="Optional notes"
+                ></textarea>
+              </label>
+
+              <div class="form-actions">
+                <button type="submit" class="primary-button" id="saveEntryButton">
+                  Save dose
+                </button>
+                <button type="button" class="ghost-button" id="resetFormButton">
+                  Reset
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel reminder-panel">
+            <div class="section-heading">
+              <h2>Reminders</h2>
+              <p>Browser notifications are optional and depend on your device.</p>
+            </div>
+            <div class="reminder-actions">
+              <button id="enableNotificationsButton" class="secondary-button">
+                Enable browser notifications
+              </button>
+              <p id="notificationStatus" class="muted-text">
+                Notifications are currently unavailable.
+              </p>
+            </div>
+          </section>
+        </section>
+
+        <section class="tab-panel" data-panel="history">
+          <section class="panel">
+            <div class="section-heading">
+              <h2>Dose history</h2>
+              <p>Newest first. Edit or delete any saved entry.</p>
+            </div>
+            <div class="history-actions">
+              <button id="exportButton" class="secondary-button">Export JSON</button>
+              <label class="import-button">
+                Import JSON
+                <input id="importInput" type="file" accept="application/json" />
+              </label>
+            </div>
+            <div id="historyList" class="history-list"></div>
+          </section>
+        </section>
+
+        <section class="tab-panel" data-panel="settings">
+          <section class="panel">
+            <div class="section-heading">
+              <h2>Medication rules</h2>
+              <p>Adjust intervals, daily max values, and add your own meds.</p>
+            </div>
+            <form id="customMedicationForm" class="entry-form compact-form">
+              <label>
+                Name
+                <input id="customName" type="text" placeholder="Medication name" required />
+              </label>
+              <label>
+                Default dose
+                <input id="customDose" type="text" placeholder="e.g. 1 tablet" required />
+              </label>
+              <label>
+                Repeat interval (hours)
+                <input
+                  id="customInterval"
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  placeholder="6"
+                  required
+                />
+              </label>
+              <label>
+                Daily max
+                <input
+                  id="customDailyMax"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="Optional"
+                />
+              </label>
+              <label>
+                Notes
+                <textarea id="customNotes" rows="2" placeholder="Optional"></textarea>
+              </label>
+              <button type="submit" class="primary-button">Add medication</button>
+            </form>
+
+            <div id="settingsMedicationList" class="settings-list"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="warningDialog" class="warning-dialog">
+      <form method="dialog" class="dialog-content">
+        <h2>Check before saving</h2>
+        <div id="warningMessage"></div>
+        <div class="dialog-actions">
+          <button value="cancel" class="ghost-button">Cancel</button>
+          <button value="confirm" class="primary-button">Save anyway</button>
+        </div>
+      </form>
+    </dialog>
+
+    <template id="quickAddTemplate">
+      <button class="quick-button">
+        <span class="quick-name"></span>
+        <span class="quick-dose"></span>
+      </button>
+    </template>
+
+    <template id="statusCardTemplate">
+      <article class="status-card">
+        <div>
+          <p class="status-name"></p>
+          <p class="status-notes muted-text"></p>
+        </div>
+        <div class="status-details">
+          <p class="status-availability"></p>
+          <p class="status-last muted-text"></p>
+          <p class="status-next muted-text"></p>
+        </div>
+      </article>
+    </template>
+
+    <template id="historyItemTemplate">
+      <article class="history-item">
+        <div class="history-main">
+          <p class="history-name"></p>
+          <p class="history-dose muted-text"></p>
+          <p class="history-time muted-text"></p>
+          <p class="history-notes muted-text"></p>
+        </div>
+        <div class="history-item-actions">
+          <button class="secondary-button history-edit">Edit</button>
+          <button class="ghost-button history-delete">Delete</button>
+        </div>
+      </article>
+    </template>
+
+    <template id="settingsItemTemplate">
+      <article class="settings-item">
+        <div class="settings-item-header">
+          <div>
+            <h3 class="settings-name"></h3>
+            <p class="muted-text settings-meta"></p>
+          </div>
+          <button class="ghost-button settings-remove">Delete</button>
+        </div>
+        <div class="settings-grid">
+          <label>
+            Default dose
+            <input class="settings-dose" type="text" />
+          </label>
+          <label>
+            Repeat interval (hours)
+            <input class="settings-interval" type="number" min="1" step="0.5" />
+          </label>
+          <label>
+            Daily max
+            <input class="settings-max" type="number" min="1" step="1" />
+          </label>
+          <label class="settings-notes-label">
+            Notes
+            <textarea class="settings-notes" rows="2"></textarea>
+          </label>
+        </div>
+        <button class="secondary-button settings-save">Save rule</button>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
