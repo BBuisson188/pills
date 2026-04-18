@@ -2,45 +2,7 @@ const STORAGE_KEY = "recovery-med-tracker-v1";
 const NOTIFICATION_STORAGE_KEY = "recovery-med-tracker-notifications";
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
-
-const defaultMedications = [
-  {
-    id: crypto.randomUUID(),
-    name: "Tylenol / acetaminophen",
-    doseLabel: "1000 mg",
-    intervalHours: 6,
-    dailyMax: null,
-    notes: "Often alternated with Motrin every 3 hours.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(),
-    name: "Motrin / ibuprofen",
-    doseLabel: "600 mg",
-    intervalHours: 6,
-    dailyMax: null,
-    notes: "Often alternated with Tylenol every 3 hours.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(),
-    name: "Gas-X / simethicone",
-    doseLabel: "1 dose",
-    intervalHours: 4,
-    dailyMax: null,
-    notes: "Editable range. Default set to 4 hours for earliest allowed time.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(),
-    name: "Colace / docusate",
-    doseLabel: "1 dose",
-    intervalHours: 12,
-    dailyMax: 2,
-    notes: "Editable for once or twice daily use.",
-    createdAt: new Date().toISOString(),
-  },
-];
+const defaultMedications = createDefaultMedications();
 
 const state = loadState();
 
@@ -90,23 +52,117 @@ function initialize() {
   startCountdownTicker();
 }
 
+function createDefaultMedications() {
+  const createdAt = new Date().toISOString();
+  return [
+    {
+      id: crypto.randomUUID(),
+      name: "Tylenol / acetaminophen",
+      doseLabel: "1 capsule",
+      intervalHours: 6,
+      dailyMax: null,
+      notes: "Often alternated with Motrin every 3 hours.",
+      createdAt,
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Motrin / ibuprofen",
+      doseLabel: "3 capsules",
+      intervalHours: 6,
+      dailyMax: null,
+      notes: "Often alternated with Tylenol every 3 hours.",
+      createdAt,
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Gas-X / simethicone",
+      doseLabel: "2 capsules",
+      intervalHours: 4,
+      dailyMax: null,
+      notes: "Editable range. Default set to 4 hours for earliest allowed time.",
+      createdAt,
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Colace / docusate",
+      doseLabel: "1 capsule",
+      intervalHours: 12,
+      dailyMax: 2,
+      notes: "Editable for once or twice daily use.",
+      createdAt,
+    },
+  ];
+}
+
+function createInitialEntries(medications) {
+  const medicationIds = {
+    tylenol: medications.find((medication) => medication.name.includes("Tylenol"))?.id,
+    motrin: medications.find((medication) => medication.name.includes("Motrin"))?.id,
+    gasx: medications.find((medication) => medication.name.includes("Gas-X"))?.id,
+    colace: medications.find((medication) => medication.name.includes("Colace"))?.id,
+  };
+
+  const entries = [
+    ["tylenol", "1 capsule", "2026-04-17T18:45:00-04:00"],
+    ["motrin", "3 capsules", "2026-04-17T21:45:00-04:00"],
+    ["gasx", "2 capsules", "2026-04-17T21:15:00-04:00"],
+    ["tylenol", "1 capsule", "2026-04-18T00:45:00-04:00"],
+    ["motrin", "3 capsules", "2026-04-18T03:46:00-04:00"],
+    ["tylenol", "1 capsule", "2026-04-18T06:48:00-04:00"],
+    ["colace", "1 capsule", "2026-04-18T09:30:00-04:00"],
+    ["motrin", "3 capsules", "2026-04-18T09:49:00-04:00"],
+    ["gasx", "2 capsules", "2026-04-18T10:00:00-04:00"],
+  ];
+
+  return entries
+    .filter(([key]) => medicationIds[key])
+    .map(([key, doseAmount, takenAt]) => ({
+      id: crypto.randomUUID(),
+      medicationId: medicationIds[key],
+      doseAmount,
+      takenAt,
+      notes: "",
+      createdAt: takenAt,
+      updatedAt: takenAt,
+    }));
+}
+
+function createInitialState() {
+  const medications = createDefaultMedications();
+  return {
+    medications,
+    entries: createInitialEntries(medications),
+    ui: {
+      notificationPermissionRequested: false,
+      notificationsEnabled: readNotificationPreference(),
+      lastNotificationMap: {},
+    },
+  };
+}
+
+function applyMedicationRegimenDefaults(medications) {
+  medications.forEach((medication) => {
+    if (medication.name.includes("Tylenol")) {
+      medication.doseLabel = "1 capsule";
+    } else if (medication.name.includes("Motrin")) {
+      medication.doseLabel = "3 capsules";
+    } else if (medication.name.includes("Gas-X")) {
+      medication.doseLabel = "2 capsules";
+    } else if (medication.name.includes("Colace")) {
+      medication.doseLabel = "1 capsule";
+    }
+  });
+}
+
 function loadState() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) {
-      return {
-        medications: defaultMedications,
-        entries: [],
-        ui: {
-          notificationPermissionRequested: false,
-          notificationsEnabled: readNotificationPreference(),
-          lastNotificationMap: {},
-        },
-      };
+      return createInitialState();
     }
 
     const parsed = JSON.parse(stored);
-    return {
+    const loadedState = {
       medications: Array.isArray(parsed.medications) && parsed.medications.length
         ? parsed.medications
         : defaultMedications,
@@ -119,17 +175,14 @@ function loadState() {
         lastNotificationMap: parsed.ui?.lastNotificationMap ?? {},
       },
     };
+    applyMedicationRegimenDefaults(loadedState.medications);
+    if (!loadedState.entries.length) {
+      loadedState.entries = createInitialEntries(loadedState.medications);
+    }
+    return loadedState;
   } catch (error) {
     console.error("Failed to load state:", error);
-    return {
-      medications: defaultMedications,
-      entries: [],
-      ui: {
-        notificationPermissionRequested: false,
-        notificationsEnabled: false,
-        lastNotificationMap: {},
-      },
-    };
+    return createInitialState();
   }
 }
 
@@ -280,30 +333,20 @@ function renderStatusCards() {
 }
 
 function renderNextMedicationCard() {
-  const summaries = getMedicationSummaries();
-  if (!summaries.length) {
+  const nextSummary = getNextMedicationSummary();
+  if (!state.medications.length) {
     elements.nextMedicationName.textContent = "No medications configured";
     elements.nextMedicationTime.textContent = "Add a medication in settings.";
     elements.nextMedicationCountdown.textContent = "";
     return;
   }
 
-  const activeSummaries = summaries.filter((summary) => summary.hasHistory);
-
-  if (!activeSummaries.length) {
+  if (!nextSummary) {
     elements.nextMedicationName.textContent = "No doses logged yet";
     elements.nextMedicationTime.textContent = "Use Quick add or the manual form to start tracking.";
     elements.nextMedicationCountdown.textContent = "";
     return;
   }
-
-  const nextSummary = activeSummaries
-    .slice()
-    .sort(
-      (a, b) =>
-        a.nextAllowedAt - b.nextAllowedAt ||
-        a.medication.name.localeCompare(b.medication.name)
-    )[0];
 
   elements.nextMedicationName.textContent = nextSummary.medication.name;
   elements.nextMedicationTime.textContent = nextSummary.isAvailable
@@ -312,6 +355,20 @@ function renderNextMedicationCard() {
   elements.nextMedicationCountdown.textContent = nextSummary.isAvailable
     ? "You can log this now if it matches your instructions."
     : `Countdown: ${formatCountdown(nextSummary.nextAllowedAt - Date.now())}`;
+}
+
+function getNextMedicationSummary() {
+  const activeSummaries = getMedicationSummaries().filter((summary) => summary.hasHistory);
+  if (!activeSummaries.length) {
+    return null;
+  }
+  return activeSummaries
+    .slice()
+    .sort(
+      (a, b) =>
+        a.nextAllowedAt - b.nextAllowedAt ||
+        a.medication.name.localeCompare(b.medication.name)
+    )[0];
 }
 
 function renderAlternationHelper() {
